@@ -148,7 +148,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .tbl-hdr{padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
 .tbl-title{font-size:13px;font-weight:600;color:var(--text)}
 .tbl-pill{font-size:11px;color:var(--text3);background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:2px 9px}
-.tbl-wrap{overflow-x:auto}
+.tbl-wrap{overflow-x:auto;overflow-y:auto;max-height:520px}
 table{width:100%;border-collapse:collapse}
 th{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;padding:10px 16px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;background:var(--surface2)}
 td{font-size:12px;color:var(--text);padding:10px 16px;border-bottom:1px solid var(--border);vertical-align:middle}
@@ -308,13 +308,26 @@ td.mono{font-family:monospace;font-size:11px;color:var(--text2)}
 .kpi-target-fill.good{background:var(--green)}.kpi-target-fill.warn{background:var(--amber)}.kpi-target-fill.bad{background:var(--red)}
 .kpi-target-lbl{font-size:9px;color:var(--text3);cursor:pointer;margin-top:3px;display:inline-block;line-height:1.2}
 .kpi-target-lbl:hover{color:var(--zuper)}
-/* ───── TABLE SEARCH + CSV ───── */
+/* ───── TABLE SEARCH + CSV + PAGINATION ───── */
 .tbl-toolbar{display:flex;align-items:center;gap:8px;padding:10px 16px 4px}
 .tbl-search{flex:1;padding:6px 12px;border-radius:7px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text);font-size:12px;outline:none;min-width:0}
 .tbl-search:focus{border-color:var(--zuper)}
 .tbl-csv-btn{padding:5px 10px;border-radius:7px;border:1.5px solid var(--border2);background:transparent;color:var(--text2);font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .tbl-csv-btn:hover{border-color:var(--green);color:var(--green)}
 .tbl-row-count{font-size:11px;color:var(--text3);white-space:nowrap;flex-shrink:0}
+.tbl-pagination{display:flex;align-items:center;gap:6px;padding:7px 14px;border-top:1px solid var(--border2);flex-wrap:wrap}
+.pgn-info{font-size:11px;color:var(--text3);flex:1;min-width:80px}
+.pgn-btn{padding:3px 9px;border-radius:6px;border:1.5px solid var(--border2);background:transparent;color:var(--text2);font-size:11px;font-weight:500;cursor:pointer;line-height:1.5}
+.pgn-btn:hover:not(:disabled){border-color:var(--zuper);color:var(--zuper)}
+.pgn-btn:disabled{opacity:.3;cursor:default}
+.pgn-pages{display:flex;align-items:center;gap:2px}
+.pgn-num{padding:3px 7px;border-radius:5px;border:1.5px solid transparent;font-size:11px;cursor:pointer;color:var(--text2);background:transparent}
+.pgn-num:hover{border-color:var(--border2)}
+.pgn-num.active{border-color:var(--zuper);color:var(--zuper);font-weight:600}
+.pgn-num.ellipsis{cursor:default;border:none;color:var(--text3)}
+.pgn-size{padding:3px 6px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text);font-size:11px;cursor:pointer}
+.cw-tbl-toolbar{display:flex;align-items:center;justify-content:space-between;padding:6px 12px 4px;gap:8px;border-bottom:1px solid var(--border2)}
+.cw-tbl-count{font-size:11px;color:var(--text3)}
 /* ───── TEAM SCORECARD ───── */
 .scorecard-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:20px}
 .scorecard-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:5px}
@@ -717,28 +730,45 @@ async function zGet(path){
   }catch(e){clearTimeout(t);throw e;}
 }
 
+async function zGetAll(path){
+  const sep=path.includes('?')?'&':'?';
+  const first=await zGet(path+sep+'page=1&count=100');
+  const firstData=Array.isArray(first)?first:(first.data||[]);
+  const total=first.total_records||firstData.length;
+  if(firstData.length>=total){return{data:firstData,total_records:total};}
+  const pages=Math.ceil(total/100);
+  const rest=await Promise.allSettled(Array.from({length:pages-1},(_,i)=>zGet(path+sep+`page=${i+2}&count=100`)));
+  const allData=[...firstData];
+  rest.forEach(r=>{if(r.status==='fulfilled'){const d=Array.isArray(r.value)?r.value:(r.value.data||[]);allData.push(...d);}});
+  return{data:allData,total_records:total};
+}
+
 async function loadAll(){
-  setStatus('loading','Fetching all modules...');
-  const fetches={
-    jobs:zGet('jobs?page=1&count=100&sort=DESC&sort_by=none'),
-    customers:zGet('customers?page=1&count=100&sort=DESC&sort_by=created_at'),
-    properties:zGet('property?page=1&count=100'),
-    invoices:zGet('invoice?page=1&count=100'),
-    estimates:zGet('estimate?page=1&count=100'),
-    parts:zGet('product?page=1&count=100'),
-    purchase_orders:zGet('purchase_orders?page=1&count=100'),
-    material_requests:zGet('material_requests?page=1&count=100'),
-    assets:zGet('assets?page=1&count=100'),
-    timesheets:zGet('user/timesheet?page=1&count=100'),
-    teams:zGet('team?page=1&count=100'),
-    users:zGet('user?page=1&count=100&sort=ASC&sort_by=created_at'),
-    vendors:zGet('vendor?page=1&count=100')
+  setStatus('loading','Fetching data… (large accounts may take a moment)');
+  const endpts={
+    jobs:'jobs?sort=DESC&sort_by=none',
+    customers:'customers?sort=DESC&sort_by=created_at',
+    properties:'property',
+    invoices:'invoice',
+    estimates:'estimate',
+    parts:'product',
+    purchase_orders:'purchase_orders',
+    material_requests:'material_requests',
+    assets:'assets',
+    timesheets:'user/timesheet',
+    teams:'team',
+    users:'user?sort=ASC&sort_by=created_at',
+    vendors:'vendor',
   };
-  const keys=Object.keys(fetches);
-  const results=await Promise.allSettled(Object.values(fetches));
+  const keys=Object.keys(endpts);
+  let done=0;
+  const results=await Promise.allSettled(keys.map(k=>
+    zGetAll(endpts[k]).then(r=>{done++;setStatus('loading',`Loading… ${done}/${keys.length} modules`);return r;})
+  ));
   results.forEach((r,i)=>{
-    cache[keys[i]]=r.status==='fulfilled'?(r.value.data||r.value||[]):[];
-    if(r.status==='fulfilled'&&r.value.total_records)cache[keys[i]+'_total']=r.value.total_records;
+    const k=keys[i];
+    cache[k]=r.status==='fulfilled'?(r.value.data||r.value||[]):[];
+    if(r.status==='fulfilled'&&r.value.total_records!=null)cache[k+'_total']=r.value.total_records;
   });
   invalidateDynCols();
   loadCustomTbls();
@@ -923,7 +953,7 @@ function renderJobs(){
     addDrillDown('jobsCatChart','jobsTbl');
   },80);
   document.getElementById('jobsTblPill').textContent=jobs.length+' shown';
-  document.getElementById('jobsTbl').innerHTML=jobs.slice(0,50).map(j=>`<tr>
+  document.getElementById('jobsTbl').innerHTML=jobs.map(j=>`<tr>
     <td class="mono">${j.work_order_number||'—'}</td>
     <td>${j.job_title||'—'}</td>
     <td>${(j.customer?.customer_first_name||'')+' '+(j.customer?.customer_last_name||'')}</td>
@@ -960,7 +990,7 @@ function renderTimesheets(){
   document.getElementById('tsTblPill').textContent=ts.length+' shown';
   document.getElementById('tsTbl').innerHTML=ts.length===0?
     `<tr><td colspan="6"><div class="empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>No timesheet data in this range</div></td></tr>`:
-    ts.slice(0,50).map(t=>`<tr>
+    ts.map(t=>`<tr>
       <td>${fmtDate(t.date||t.created_at)}</td>
       <td>${t.user_name||t.user?.first_name||'—'}</td>
       <td class="dim">${t.clock_in||t.start_time||'—'}</td>
@@ -992,9 +1022,10 @@ function renderCustomers(){
     const tColors=tKeys.map((_,i)=>colors[i%colors.length]);
     makeDoughnut('custTagChart',tKeys,tKeys.map(k=>tagC[k]),tColors);
     legend('custTagLeg',tKeys.map((k,i)=>`${k} (${tagC[k]})`),tColors);
+    addDrillDown('custTagChart','custTbl');
   },50);
   document.getElementById('custTblPill').textContent=tot('customers')+' total';
-  document.getElementById('custTbl').innerHTML=custs.slice(0,50).map(c=>`<tr>
+  document.getElementById('custTbl').innerHTML=custs.map(c=>`<tr>
     <td><div style="display:flex;align-items:center;gap:8px"><div class="avatar">${((c.customer_first_name||'?')[0]+(c.customer_last_name||'?')[0]).toUpperCase()}</div>${(c.customer_first_name||'')+' '+(c.customer_last_name||'')}</div></td>
     <td class="dim">${c.customer_email||'—'}</td>
     <td class="dim">${c.customer_contact_no?.mobile||'—'}</td>
@@ -1020,7 +1051,7 @@ function renderProperties(){
   document.getElementById('propTblPill').textContent=tot('properties')+' total';
   document.getElementById('propTbl').innerHTML=props.length===0?
     `<tr><td colspan="7"><div class="empty">No property data available</div></td></tr>`:
-    props.slice(0,15).map(p=>`<tr>
+    props.map(p=>`<tr>
       <td>${p.property_name||'—'}</td>
       <td class="dim">${p.property_address?.street||'—'}</td>
       <td class="dim">${p.property_address?.city||'—'}</td>
@@ -1051,9 +1082,10 @@ function renderQuotes(){
   setTimeout(()=>{
     makeDoughnut('quotesStatusChart',sKeys,sKeys.map(k=>statusC[k]),colors.slice(0,sKeys.length));
     legend('quotesStatusLeg',sKeys.map((k,i)=>`${k} (${statusC[k]})`),colors.slice(0,sKeys.length));
+    addDrillDown('quotesStatusChart','quotesTbl');
   },50);
   document.getElementById('quotesTblPill').textContent=tot('estimates')+' total';
-  document.getElementById('quotesTbl').innerHTML=ests.slice(0,50).map(e=>`<tr>
+  document.getElementById('quotesTbl').innerHTML=ests.map(e=>`<tr>
     <td class="mono">${e.estimate_no||e.quote_no||'—'}</td>
     <td>${(e.customer?.customer_first_name||'')+' '+(e.customer?.customer_last_name||'')}</td>
     <td>${fmt$(e.total||e.estimate_total||0)}</td>
@@ -1093,7 +1125,7 @@ function renderInvoices(){
     addDrillDown('invStatusChart','invTbl');
   },80);
   document.getElementById('invTblPill').textContent=invs.length+' shown';
-  document.getElementById('invTbl').innerHTML=invs.slice(0,50).map(i=>`<tr>
+  document.getElementById('invTbl').innerHTML=invs.map(i=>`<tr>
     <td class="mono">${i.invoice_no||'—'}</td>
     <td>${(i.customer?.customer_first_name||'')+' '+(i.customer?.customer_last_name||'')}</td>
     <td>${fmt$(parseFloat(i.total)||0)}</td>
@@ -1115,7 +1147,7 @@ function renderContracts(){
     {label:'Doc coverage',val:jobs.length?Math.round(withContracts.length/jobs.length*100)+'%':'—',sub:'jobs with documentation',cls:'green'},
   ]);
   document.getElementById('conTblPill').textContent=tot('jobs')+' jobs';
-  document.getElementById('conTbl').innerHTML=jobs.slice(0,15).map(j=>`<tr>
+  document.getElementById('conTbl').innerHTML=jobs.map(j=>`<tr>
     <td class="mono">${j.work_order_number||j.job_uid?.slice(0,8)||'—'}</td>
     <td>${j.job_title||'—'}</td>
     <td>${(j.customer?.customer_first_name||'')+' '+(j.customer?.customer_last_name||'')}</td>
@@ -1148,12 +1180,14 @@ function renderParts(){
     const cColors=cKeys.map((_,i)=>colors[i%colors.length]);
     makeBar('partsCatChart',cKeys,cKeys.map(k=>catC[k]),cColors);
     legend('partsCatLeg',cKeys,cColors);
+    addDrillDown('partsCatChart','partsTbl');
     const tColors=tKeys.map((_,i)=>colors[i%colors.length]);
     makeDoughnut('partsTypeChart',tKeys,tKeys.map(k=>typeC[k]),tColors);
     legend('partsTypeLeg',tKeys.map((k,i)=>`${k} (${typeC[k]})`),tColors);
+    addDrillDown('partsTypeChart','partsTbl');
   },50);
   document.getElementById('partsTblPill').textContent=tot('parts')+' items';
-  document.getElementById('partsTbl').innerHTML=parts.slice(0,15).map(p=>`<tr>
+  document.getElementById('partsTbl').innerHTML=parts.map(p=>`<tr>
     <td>${p.product_name||'—'}</td>
     <td class="dim">${p.product_category?.category_name||'—'}</td>
     <td>${p.product_type==='SERVICE'?`<span class="badge bb">Service</span>`:`<span class="badge bz">Part</span>`}</td>
@@ -1175,7 +1209,7 @@ function renderVendors(){
   document.getElementById('vendTblPill').textContent=tot('vendors')+' vendors';
   document.getElementById('vendTbl').innerHTML=vendors.length===0?
     `<tr><td colspan="5"><div class="empty">No vendor records found</div></td></tr>`:
-    vendors.slice(0,15).map(v=>`<tr>
+    vendors.map(v=>`<tr>
       <td>${v.vendor_name||v.name||'—'}</td>
       <td class="dim">${v.vendor_email||v.email||'—'}</td>
       <td class="dim">${v.vendor_phone||v.phone||'—'}</td>
@@ -1202,11 +1236,12 @@ function renderMR(){
   setTimeout(()=>{
     makeDoughnut('mrStatusChart',sKeys,sKeys.map(k=>statusC[k]),colors.slice(0,sKeys.length));
     legend('mrStatusLeg',sKeys.map((k,i)=>`${k} (${statusC[k]})`),colors.slice(0,sKeys.length));
+    addDrillDown('mrStatusChart','mrTbl');
   },50);
   document.getElementById('mrTblPill').textContent=tot('material_requests')+' total';
   document.getElementById('mrTbl').innerHTML=mrs.length===0?
     `<tr><td colspan="6"><div class="empty">No material requests found</div></td></tr>`:
-    mrs.slice(0,15).map(m=>`<tr>
+    mrs.map(m=>`<tr>
       <td class="mono">${m.material_request_uid?.slice(0,8)||'—'}</td>
       <td>${m.job?.job_title||m.job_title||'—'}</td>
       <td class="dim">${m.created_by?.first_name||m.user?.first_name||'—'}</td>
@@ -1235,11 +1270,12 @@ function renderPO(){
   setTimeout(()=>{
     makeDoughnut('poStatusChart',sKeys,sKeys.map(k=>statusC[k]),colors.slice(0,sKeys.length));
     legend('poStatusLeg',sKeys.map((k,i)=>`${k} (${statusC[k]})`),colors.slice(0,sKeys.length));
+    addDrillDown('poStatusChart','poTbl');
   },50);
   document.getElementById('poTblPill').textContent=tot('purchase_orders')+' total';
   document.getElementById('poTbl').innerHTML=pos.length===0?
     `<tr><td colspan="6"><div class="empty">No purchase orders found</div></td></tr>`:
-    pos.slice(0,15).map(p=>`<tr>
+    pos.map(p=>`<tr>
       <td class="mono">${p.purchase_order_no||p.purchase_order_uid?.slice(0,8)||'—'}</td>
       <td class="dim">${p.vendor?.vendor_name||p.vendor_name||'—'}</td>
       <td>${p.job?.job_title||p.job_title||'—'}</td>
@@ -1266,11 +1302,12 @@ function renderAssets(){
     const cColors=cKeys.map((_,i)=>colors[i%colors.length]);
     makeDoughnut('assetsCatChart',cKeys,cKeys.map(k=>catC[k]),cColors);
     legend('assetsCatLeg',cKeys.map((k,i)=>`${k} (${catC[k]})`),cColors);
+    addDrillDown('assetsCatChart','assetsTbl');
   },50);
   document.getElementById('assetsTblPill').textContent=tot('assets')+' total';
   document.getElementById('assetsTbl').innerHTML=assets.length===0?
     `<tr><td colspan="6"><div class="empty">No asset records found</div></td></tr>`:
-    assets.slice(0,15).map(a=>`<tr>
+    assets.map(a=>`<tr>
       <td>${a.asset_name||a.name||'—'}</td>
       <td class="dim">${a.asset_category?.category_name||a.category_name||'—'}</td>
       <td class="mono">${a.serial_number||a.asset_serial_no||'—'}</td>
@@ -1423,7 +1460,7 @@ const WIDGET_DEFS=[
    render(el){const jobs=fd('jobs');const open=jobs.filter(j=>{const s=(j.current_job_status?.status_name||'').toLowerCase();return !s.includes('complet')&&!s.includes('cancel');}).length;const high=jobs.filter(j=>j.job_priority==='HIGH').length;const done=jobs.filter(j=>(j.current_job_status?.status_name||'').toLowerCase().includes('complet')).length;el.innerHTML=`<div class="wkpi-row"><div class="wkpi-item"><div class="wkpi-val" style="color:var(--zuper)">${jobs.length}</div><div class="wkpi-lbl">Jobs (period)</div><div class="wkpi-sub">${open} open</div></div><div class="wkpi-item"><div class="wkpi-val" style="color:var(--red)">${high}</div><div class="wkpi-lbl">High Priority</div></div><div class="wkpi-item"><div class="wkpi-val" style="color:var(--green)">${done}</div><div class="wkpi-lbl">Completed</div></div></div>`;}
   },
   {id:'jobs-table',title:'Recent Jobs',module:'Jobs',icon:'📋',defaultWide:true,
-   render(el){const jobs=fd('jobs');el.innerHTML=`<div class="tbl-wrap"><table><thead><tr><th>Job #</th><th>Title</th><th>Customer</th><th>Status</th><th>Due</th></tr></thead><tbody>${jobs.slice(0,8).map(j=>`<tr><td class="mono">${j.work_order_number||'—'}</td><td>${j.job_title||'—'}</td><td>${(j.customer?.customer_first_name||'')+' '+(j.customer?.customer_last_name||'')}</td><td>${sBadge(j.current_job_status?.status_name)}</td><td class="dim">${fmtDate(j.due_date)}</td></tr>`).join('')}</tbody></table></div>`;}
+   render(el){const jobs=fd('jobs');el.innerHTML=`<div class="cw-tbl-toolbar"><span class="cw-tbl-count">${jobs.length} rows</span><button class="tbl-csv-btn" onclick="csvJobs()" title="Export to CSV">⬇ CSV</button></div><div class="tbl-wrap" style="max-height:240px;overflow-y:auto"><table><thead><tr><th>Job #</th><th>Title</th><th>Customer</th><th>Status</th><th>Due</th></tr></thead><tbody>${jobs.slice(0,20).map(j=>`<tr><td class="mono">${j.work_order_number||'—'}</td><td>${j.job_title||'—'}</td><td>${(j.customer?.customer_first_name||'')+' '+(j.customer?.customer_last_name||'')}</td><td>${sBadge(j.current_job_status?.status_name)}</td><td class="dim">${fmtDate(j.due_date)}</td></tr>`).join('')}</tbody></table></div>${jobs.length>20?`<div style="font-size:11px;color:var(--text3);padding:5px 12px 8px">Showing 20 of ${jobs.length} rows</div>`:''}`;  }
   },
   // FINANCE
   {id:'inv-status',title:'Invoice Status',module:'Finance',icon:'📊',defaultWide:false,
@@ -1434,7 +1471,7 @@ const WIDGET_DEFS=[
    render(el){const invs=fd('invoices','invoice_date');const revenue=sum(invs.filter(i=>i.invoice_status==='PAID'),i=>i.total);const outstanding=sum(invs.filter(i=>['SENT','APPROVED','PARTIALLY_PAID'].includes(i.invoice_status)),i=>i.total);el.innerHTML=`<div class="wkpi-row"><div class="wkpi-item"><div class="wkpi-val" style="color:var(--green)">${fmt$(revenue)}</div><div class="wkpi-lbl">Revenue (Paid)</div><div class="wkpi-sub">${invs.filter(i=>i.invoice_status==='PAID').length} invoices</div></div><div class="wkpi-item"><div class="wkpi-val" style="color:var(--amber)">${fmt$(outstanding)}</div><div class="wkpi-lbl">Outstanding</div><div class="wkpi-sub">awaiting payment</div></div></div>`;}
   },
   {id:'inv-table',title:'Recent Invoices',module:'Finance',icon:'📋',defaultWide:true,
-   render(el){const invs=fd('invoices','invoice_date');el.innerHTML=`<div class="tbl-wrap"><table><thead><tr><th>Invoice #</th><th>Customer</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${invs.slice(0,8).map(i=>`<tr><td class="mono">${i.invoice_no||'—'}</td><td>${(i.customer?.customer_first_name||'')+' '+(i.customer?.customer_last_name||'')}</td><td>${fmt$(parseFloat(i.total)||0)}</td><td>${sBadge(i.invoice_status)}</td><td class="dim">${fmtDate(i.invoice_date)}</td></tr>`).join('')}</tbody></table></div>`;}
+   render(el){const invs=fd('invoices','invoice_date');el.innerHTML=`<div class="cw-tbl-toolbar"><span class="cw-tbl-count">${invs.length} rows</span><button class="tbl-csv-btn" onclick="csvInvoices()" title="Export to CSV">⬇ CSV</button></div><div class="tbl-wrap" style="max-height:240px;overflow-y:auto"><table><thead><tr><th>Invoice #</th><th>Customer</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${invs.slice(0,20).map(i=>`<tr><td class="mono">${i.invoice_no||'—'}</td><td>${(i.customer?.customer_first_name||'')+' '+(i.customer?.customer_last_name||'')}</td><td>${fmt$(parseFloat(i.total)||0)}</td><td>${sBadge(i.invoice_status)}</td><td class="dim">${fmtDate(i.invoice_date)}</td></tr>`).join('')}</tbody></table></div>${invs.length>20?`<div style="font-size:11px;color:var(--text3);padding:5px 12px 8px">Showing 20 of ${invs.length} rows</div>`:''}`;  }
   },
   {id:'quotes-status',title:'Quote Status',module:'Finance',icon:'📊',defaultWide:false,
    supportedTypes:['doughnut','pie','bar','hbar','table'],defaultType:'doughnut',
@@ -1684,7 +1721,7 @@ function resolveWidget(id){
       supportedTypes:['table','doughnut','pie','bar','hbar'],
       defaultType:'table',
       getData(){return getCustomChartData(def);},
-      render(el){renderCustomTable(el,def);}};
+      render(el){renderCustomTable(el,def,id);}};
   }
   return null;
 }
@@ -1724,43 +1761,47 @@ function getCustomChartData(def){
   };
 }
 
-function renderCustomTable(el,def){
-  const mod=MODULE_COLUMNS[def.module];
-  if(!mod){el.innerHTML='<div class="empty">Module unavailable</div>';return;}
+function _buildCustomTableData(def){
+  const mod=MODULE_COLUMNS[def.module];if(!mod)return{cols:[],data:[]};
   let data=filterByDate(cache[mod.cacheKey]||[],mod.dateField);
-  // Apply filter
   if(def.filter&&def.filter.field&&def.filter.value&&def.filter.value!=='Any'){
     const fCol=findCol(def.module,def.filter.field);
-    if(fCol){
-      const fv=String(def.filter.value).toLowerCase();
-      data=data.filter(item=>{
-        const rv=String(fCol.rawVal?fCol.rawVal(item):fCol.val(item)).replace(/<[^>]+>/g,'').toLowerCase();
-        return rv===fv||rv.includes(fv);
-      });
-    }
+    if(fCol){const fv=String(def.filter.value).toLowerCase();data=data.filter(item=>{const rv=String(fCol.rawVal?fCol.rawVal(item):fCol.val(item)).replace(/<[^>]+>/g,'').toLowerCase();return rv===fv||rv.includes(fv);});}
   }
-  // Apply sort
   if(def.sort&&def.sort.field){
     const sCol=findCol(def.module,def.sort.field);
-    if(sCol){
-      data=[...data].sort((a,b)=>{
-        const av=sCol.rawVal?sCol.rawVal(a):String(sCol.val(a)).replace(/<[^>]+>/g,'');
-        const bv=sCol.rawVal?sCol.rawVal(b):String(sCol.val(b)).replace(/<[^>]+>/g,'');
-        const cmp=typeof av==='number'?av-bv:String(av).localeCompare(String(bv));
-        return def.sort.dir==='desc'?-cmp:cmp;
-      });
-    }
+    if(sCol){data=[...data].sort((a,b)=>{const av=sCol.rawVal?sCol.rawVal(a):String(sCol.val(a)).replace(/<[^>]+>/g,'');const bv=sCol.rawVal?sCol.rawVal(b):String(sCol.val(b)).replace(/<[^>]+>/g,'');const cmp=typeof av==='number'?av-bv:String(av).localeCompare(String(bv));return def.sort.dir==='desc'?-cmp:cmp;});}
   }
-  const limit=def.limit||20;
   const cols=def.cols.map(cid=>findCol(def.module,cid)).filter(Boolean);
+  return{cols,data};
+}
+
+function csvFromWidget(id){
+  const def=customTbls[id];if(!def)return;
+  const{cols,data}=_buildCustomTableData(def);
+  if(!cols.length||!data.length){alert('No data to export.');return;}
+  csvDownload(cols.map(c=>c.label),data.map(item=>cols.map(c=>{const v=c.rawVal?c.rawVal(item):String(c.val(item)).replace(/<[^>]+>/g,'').trim();return v===null||v===undefined?'':v;})),`${def.name.replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.csv`);
+}
+
+function renderCustomTable(el,def,id){
+  const mod=MODULE_COLUMNS[def.module];
+  if(!mod){el.innerHTML='<div class="empty">Module unavailable</div>';return;}
+  const{cols,data}=_buildCustomTableData(def);
+  const limit=def.limit||20;
   const shown=data.slice(0,limit);
-  el.innerHTML=`<div class="tbl-wrap" style="max-height:260px;overflow-y:auto"><table>
-    <thead><tr>${cols.map(c=>`<th>${c.label}</th>`).join('')}</tr></thead>
-    <tbody>${shown.length
-      ?shown.map(item=>`<tr>${cols.map(c=>`<td>${c.val(item)}</td>`).join('')}</tr>`).join('')
-      :`<tr><td colspan="${cols.length}"><div class="empty" style="padding:20px 0">No data matches filter</div></td></tr>`}
-    </tbody></table></div>
-  ${data.length>limit?`<div style="font-size:11px;color:var(--text3);padding:5px 12px 8px">Showing ${limit} of ${data.length} rows</div>`:''}`;
+  const exportBtn=id?`<button class="tbl-csv-btn" onclick="csvFromWidget('${id}')" title="Export all ${data.length} rows to CSV">⬇ CSV</button>`:'';
+  el.innerHTML=`
+    <div class="cw-tbl-toolbar">
+      <span class="cw-tbl-count">${data.length} row${data.length!==1?'s':''}</span>
+      ${exportBtn}
+    </div>
+    <div class="tbl-wrap" style="max-height:240px;overflow-y:auto"><table>
+      <thead><tr>${cols.map(c=>`<th>${c.label}</th>`).join('')}</tr></thead>
+      <tbody>${shown.length
+        ?shown.map(item=>`<tr>${cols.map(c=>`<td>${c.val(item)}</td>`).join('')}</tr>`).join('')
+        :`<tr><td colspan="${cols.length}"><div class="empty" style="padding:20px 0">No data matches filter</div></td></tr>`}
+      </tbody></table></div>
+    ${data.length>limit?`<div style="font-size:11px;color:var(--text3);padding:5px 12px 8px">Showing ${limit} of ${data.length} rows · <button class="tbl-csv-btn" onclick="csvFromWidget('${id}')" style="font-size:10px;padding:3px 8px">Export all</button></div>`:''}`;
 }
 
 // ── Builder state ─────────────────────────────────────────────
@@ -2307,40 +2348,114 @@ function csvParts(){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// FEATURE 3: TABLE SEARCH  |  FEATURE 4: CHART DRILL-DOWN
+// FEATURE 3: TABLE SEARCH + PAGINATION  |  FEATURE 4: CHART DRILL-DOWN
 // ═══════════════════════════════════════════════════════════════
+const tblState={}; // { tbodyId: { page, size, search } }
+
+function _getTblState(tbodyId){
+  if(!tblState[tbodyId])tblState[tbodyId]={page:1,size:20,search:''};
+  return tblState[tbodyId];
+}
+
+function applyTableState(tbodyId){
+  const tbody=document.getElementById(tbodyId);if(!tbody)return;
+  const st=_getTblState(tbodyId);
+  const rows=Array.from(tbody.querySelectorAll('tr'));
+  const q=st.search.toLowerCase();
+  const filtered=q?rows.filter(r=>r.textContent.toLowerCase().includes(q)):rows;
+  const total=filtered.length;
+  const totalPages=Math.max(1,Math.ceil(total/st.size));
+  if(st.page>totalPages)st.page=totalPages;
+  const start=(st.page-1)*st.size;
+  const end=start+st.size;
+  rows.forEach(r=>r.style.display='none');
+  filtered.slice(start,end).forEach(r=>r.style.display='');
+  _renderPaginationBar(tbodyId,st,total,totalPages);
+}
+
+function _renderPaginationBar(tbodyId,st,total,totalPages){
+  const bar=document.getElementById('pgn_'+tbodyId);if(!bar)return;
+  const s=st.page,sz=st.size;
+  const start=Math.min((s-1)*sz+1,total),end=Math.min(s*sz,total);
+  // Build page number list (max 7 buttons with ellipsis)
+  let pages=[];
+  if(totalPages<=7){for(let i=1;i<=totalPages;i++)pages.push(i);}
+  else{
+    pages=[1];
+    if(s>3)pages.push('…');
+    for(let i=Math.max(2,s-1);i<=Math.min(totalPages-1,s+1);i++)pages.push(i);
+    if(s<totalPages-2)pages.push('…');
+    pages.push(totalPages);
+  }
+  const sizeOpts=[20,50,100].map(n=>`<option value="${n}"${sz===n?' selected':''}>${n}/page</option>`).join('');
+  bar.innerHTML=`
+    <span class="pgn-info">${total===0?'No results':`${start}–${end} of ${total}`}</span>
+    <button class="pgn-btn" onclick="setTblPage('${tbodyId}',${s-1})" ${s<=1?'disabled':''}>← Prev</button>
+    <div class="pgn-pages">${pages.map(p=>p==='…'
+      ?`<span class="pgn-num ellipsis">…</span>`
+      :`<button class="pgn-num${p===s?' active':''}" onclick="setTblPage('${tbodyId}',${p})">${p}</button>`
+    ).join('')}</div>
+    <button class="pgn-btn" onclick="setTblPage('${tbodyId}',${s+1})" ${s>=totalPages?'disabled':''}>Next →</button>
+    <select class="pgn-size" onchange="setTblPageSize('${tbodyId}',+this.value)">${sizeOpts}</select>`;
+}
+
+function setTblPage(tbodyId,page){
+  const st=_getTblState(tbodyId);
+  st.page=page;
+  applyTableState(tbodyId);
+  const el=document.getElementById(tbodyId);
+  if(el){const card=el.closest('.tbl-card');if(card)card.scrollIntoView({behavior:'smooth',block:'nearest'});}
+}
+
+function setTblPageSize(tbodyId,size){
+  const st=_getTblState(tbodyId);
+  st.size=size;st.page=1;
+  applyTableState(tbodyId);
+}
+
 function addTableSearch(tbodyId,csvFn){
   const tbody=document.getElementById(tbodyId);if(!tbody)return;
   const card=tbody.closest('.tbl-card');if(!card)return;
-  const existing=card.querySelector('.tbl-toolbar');
-  if(existing)existing.remove();
+  // Remove any previously injected toolbar/pagination
+  card.querySelector('.tbl-toolbar')?.remove();
+  card.querySelector('.tbl-pagination')?.remove();
+  // Reset state (new data just rendered)
+  const st=_getTblState(tbodyId);st.page=1;st.search='';
+  // Toolbar: search + CSV
   const toolbar=document.createElement('div');toolbar.className='tbl-toolbar';
   toolbar.innerHTML=`<input class="tbl-search" placeholder="Search…" oninput="filterTable(this,'${tbodyId}')" id="srch_${tbodyId}">`+
     (csvFn?`<button class="tbl-csv-btn" onclick="${csvFn}()">⬇ CSV</button>`:'')+
     `<span class="tbl-row-count" id="cnt_${tbodyId}"></span>`;
+  // Pagination bar: injected after .tbl-wrap
+  const pgnBar=document.createElement('div');pgnBar.className='tbl-pagination';pgnBar.id='pgn_'+tbodyId;
   const wrap=card.querySelector('.tbl-wrap');
-  if(wrap)card.insertBefore(toolbar,wrap);
-  updateTblCount(tbodyId);
+  if(wrap){card.insertBefore(toolbar,wrap);wrap.after(pgnBar);}
+  applyTableState(tbodyId);
 }
+
 function filterTable(inp,tbodyId){
-  const q=inp.value.toLowerCase();
-  const tbody=document.getElementById(tbodyId);if(!tbody)return;
-  tbody.querySelectorAll('tr').forEach(tr=>{tr.style.display=!q||tr.textContent.toLowerCase().includes(q)?'':'none';});
-  updateTblCount(tbodyId);
+  const st=_getTblState(tbodyId);
+  st.search=inp.value;st.page=1;
+  applyTableState(tbodyId);
 }
+
 function updateTblCount(tbodyId){
-  const el=document.getElementById('cnt_'+tbodyId);
-  const tbody=document.getElementById(tbodyId);if(!el||!tbody)return;
-  const rows=Array.from(tbody.querySelectorAll('tr'));
-  const vis=rows.filter(r=>r.style.display!=='none').length;
-  el.textContent=vis===rows.length?rows.length+' rows':vis+'/'+rows.length;
+  // kept for backward compatibility — applyTableState handles count now
+  applyTableState(tbodyId);
 }
+
 function drillDownTable(tbodyId,label){
   const tbody=document.getElementById(tbodyId);if(!tbody)return;
+  const st=_getTblState(tbodyId);
   const srch=document.getElementById('srch_'+tbodyId);
-  if(srch)srch.value=label;
-  tbody.querySelectorAll('tr').forEach(tr=>{tr.style.display=!label||tr.textContent.toLowerCase().includes(label.toLowerCase())?'':'none';});
-  updateTblCount(tbodyId);
+  // Toggle: same label clears; different label sets
+  if(st.search===label){
+    st.search='';if(srch)srch.value='';
+  }else{
+    st.search=label;if(srch)srch.value=label;
+  }
+  st.page=1;
+  applyTableState(tbodyId);
   const card=tbody.closest('.tbl-card');
   if(card)card.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
